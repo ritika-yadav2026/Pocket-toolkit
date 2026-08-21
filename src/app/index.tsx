@@ -1,98 +1,184 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, type Href } from 'expo-router';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+const tools = [
+  {
+    id: 'flashlight',
+    title: 'Flashlight',
+    icon: '🔦',
+    description: 'Light when you need it',
+  },
+  {
+    id: 'compass',
+    title: 'Compass',
+    icon: '🧭',
+    description: 'Find your direction',
+  },
+  {
+    id: 'level',
+    title: 'Spirit Level',
+    icon: '📐',
+    description: 'Check surface alignment',
+  },
+  {
+    id: 'scanner',
+    title: 'QR Scanner',
+    icon: '📷',
+    description: 'Scan QR codes',
+  },
+  {
+    id: 'location',
+    title: 'Location',
+    icon: '📍',
+    description: 'Check your position',
+  },
+  {
+    id: 'steps',
+    title: 'Step Counter',
+    icon: '👣',
+    description: 'Track your movement',
+  },
+];
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+const toolRoutes: Record<string, Href> = {
+  flashlight: '/flashlight',
+  compass: '/compass',
+  level: '/level',
+};
 
 export default function HomeScreen() {
+  const handleToolPress = (toolId: string, toolName: string) => {
+    const route = toolRoutes[toolId];
+    if (route) {
+      router.push(route);
+      return;
+    }
+    Alert.alert(toolName, 'We will build this feature soon.');
+  };
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.header}>
+        <Text style={styles.logo}>Pocket Toolkit</Text>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+        <Text style={styles.heading}>
+          Your everyday tools
+        </Text>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+        <Text style={styles.subheading}>
+          Simple utilities powered by your device.
+        </Text>
+      </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      <View style={styles.grid}>
+        {tools.map((tool) => (
+          <Pressable
+            key={tool.id}
+            style={styles.card}
+            onPress={() => handleToolPress(tool.id, tool.title)}
+          >
+            <Text style={styles.icon}>{tool.icon}</Text>
+
+            <Text style={styles.cardTitle}>
+              {tool.title}
+            </Text>
+
+            <Text style={styles.cardDescription}>
+              {tool.description}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: '#F7F8FC',
+  },
+
+  contentContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 70,
+    paddingBottom: 40,
+  },
+
+  header: {
+    marginBottom: 32,
+  },
+
+  logo: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6366F1',
+    marginBottom: 24,
+  },
+
+  heading: {
+    fontSize: 30,
+    fontWeight: '700',
+    color: '#16181D',
+  },
+
+  subheading: {
+    fontSize: 15,
+    color: '#777B86',
+    marginTop: 8,
+  },
+
+  grid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 16,
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+
+  card: {
+    width: '47%',
+    minHeight: 160,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+
+    elevation: 2,
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+
+  icon: {
+    fontSize: 32,
+    marginBottom: 20,
   },
-  title: {
-    textAlign: 'center',
+
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#16181D',
   },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+
+  cardDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#858994',
+    marginTop: 6,
   },
 });
