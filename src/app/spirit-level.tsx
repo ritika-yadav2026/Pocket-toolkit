@@ -1,4 +1,4 @@
-import { DeviceMotion } from 'expo-sensors';
+import { Accelerometer, DeviceMotion } from 'expo-sensors';
 import React, {
   useCallback,
   useEffect,
@@ -32,6 +32,12 @@ type Tilt = {
   vertical: number;
 };
 
+type GravitySample = {
+  x: number;
+  y: number;
+  z: number;
+};
+
 const LEVEL_THRESHOLD = 1;
 const MAX_VISUAL_ANGLE = 15;
 const BUBBLE_TRAVEL = 70;
@@ -55,10 +61,9 @@ export default function SpiritLevelScreen() {
       vertical: 0,
     });
 
-  const subscriptionRef =
-    useRef<ReturnType<
-      typeof DeviceMotion.addListener
-    > | null>(null);
+  const subscriptionRef = useRef<{
+    remove: () => void;
+  } | null>(null);
 
   const smoothedHorizontalRef =
     useRef(0);
@@ -74,134 +79,96 @@ export default function SpiritLevelScreen() {
     Math.max(-1, Math.min(1, value));
 
   /**
-   * Start listening to real device motion.
+   * Convert gravity sample into smoothed tilt angles.
    */
-  const startSensor = useCallback(() => {
-    subscriptionRef.current?.remove();
+  const applyGravitySample = useCallback(
+    (gravity: GravitySample) => {
+      const { x, y, z } = gravity;
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      if (!magnitude) {
+        return;
+      }
+      const horizontalRaw =
+        (Math.asin(clampUnit(x / magnitude)) * 180) / Math.PI;
+      const verticalRaw =
+        (Math.asin(clampUnit(y / magnitude)) * 180) / Math.PI;
+      smoothedHorizontalRef.current =
+        smoothedHorizontalRef.current +
+        SMOOTHING * (horizontalRaw - smoothedHorizontalRef.current);
+      smoothedVerticalRef.current =
+        smoothedVerticalRef.current +
+        SMOOTHING * (verticalRaw - smoothedVerticalRef.current);
+      setTilt({
+        horizontal: smoothedHorizontalRef.current,
+        vertical: smoothedVerticalRef.current,
+      });
+      setHasReading(true);
+    },
+    []
+  );
 
-    // 100ms = 10 updates per second.
-    DeviceMotion.setUpdateInterval(100);
-
-    subscriptionRef.current =
-      DeviceMotion.addListener((measurement) => {
-        const gravity =
-          measurement.accelerationIncludingGravity;
-
+  /**
+   * Prefer Accelerometer on Android (DeviceMotion is often unavailable).
+   * Fall back to DeviceMotion when needed.
+   */
+  const startSensor = useCallback(
+    async (useAccelerometer: boolean) => {
+      subscriptionRef.current?.remove();
+      if (useAccelerometer) {
+        Accelerometer.setUpdateInterval(100);
+        subscriptionRef.current = Accelerometer.addListener((measurement) => {
+          applyGravitySample(measurement);
+        });
+        return;
+      }
+      DeviceMotion.setUpdateInterval(100);
+      subscriptionRef.current = DeviceMotion.addListener((measurement) => {
+        const gravity = measurement.accelerationIncludingGravity;
         if (!gravity) {
           return;
         }
-
-        const { x, y, z } = gravity;
-
-        /**
-         * Calculate total gravity magnitude.
-         *
-         * We use the vector itself instead of assuming
-         * exactly 9.80665 because sensor readings can vary.
-         */
-        const magnitude = Math.sqrt(
-          x * x + y * y + z * z
-        );
-
-        if (!magnitude) {
-          return;
-        }
-
-        /**
-         * Phone lying flat:
-         *
-         * x ≈ 0
-         * y ≈ 0
-         *
-         * Therefore both angles approach 0°.
-         */
-        const horizontalRaw =
-          (Math.asin(
-            clampUnit(x / magnitude)
-          ) *
-            180) /
-          Math.PI;
-
-        const verticalRaw =
-          (Math.asin(
-            clampUnit(y / magnitude)
-          ) *
-            180) /
-          Math.PI;
-
-        /**
-         * Smooth sensor jitter.
-         */
-        smoothedHorizontalRef.current =
-          smoothedHorizontalRef.current +
-          SMOOTHING *
-            (horizontalRaw -
-              smoothedHorizontalRef.current);
-
-        smoothedVerticalRef.current =
-          smoothedVerticalRef.current +
-          SMOOTHING *
-            (verticalRaw -
-              smoothedVerticalRef.current);
-
-        setTilt({
-          horizontal:
-            smoothedHorizontalRef.current,
-          vertical:
-            smoothedVerticalRef.current,
-        });
-
-        setHasReading(true);
+        applyGravitySample(gravity);
       });
-  }, []);
+    },
+    [applyGravitySample]
+  );
 
   /**
    * Check sensor + permission.
    */
-  const initializeSensor =
-    useCallback(async () => {
-      try {
-        setSensorState('checking');
-
-        const available =
-          await DeviceMotion.isAvailableAsync();
-
-        if (!available) {
-          setSensorState('unavailable');
-          return;
-        }
-
-        let permission =
-          await DeviceMotion.getPermissionsAsync();
-
-        if (!permission.granted) {
-          permission =
-            await DeviceMotion.requestPermissionsAsync();
-        }
-
-        if (!permission.granted) {
-          setSensorState(
-            'permission-denied'
-          );
-          return;
-        }
-
-        startSensor();
-
-        setSensorState('ready');
-      } catch (error) {
-        console.log(
-          'DeviceMotion error:',
-          error
-        );
-
-        setSensorState('error');
+  const initializeSensor = useCallback(async () => {
+    try {
+      setSensorState('checking');
+      const accelerometerAvailable =
+        await Accelerometer.isAvailableAsync();
+      const deviceMotionAvailable = accelerometerAvailable
+        ? false
+        : await DeviceMotion.isAvailableAsync();
+      if (!accelerometerAvailable && !deviceMotionAvailable) {
+        setSensorState('unavailable');
+        return;
       }
-    }, [startSensor]);
+      const sensorApi = accelerometerAvailable
+        ? Accelerometer
+        : DeviceMotion;
+      let permission = await sensorApi.getPermissionsAsync();
+      if (!permission.granted) {
+        permission = await sensorApi.requestPermissionsAsync();
+      }
+      if (!permission.granted) {
+        setSensorState('permission-denied');
+        return;
+      }
+      await startSensor(accelerometerAvailable);
+      setSensorState('ready');
+    } catch (error) {
+      console.log('Spirit level sensor error:', error);
+      setSensorState('error');
+    }
+  }, [startSensor]);
 
   useEffect(() => {
-    initializeSensor();
-
+    void initializeSensor();
     return () => {
       subscriptionRef.current?.remove();
     };
@@ -321,9 +288,9 @@ export default function SpiritLevelScreen() {
           </Text>
 
           <Text style={styles.errorText}>
-            This device cannot provide the
-            motion data required for the
-            spirit level.
+            This emulator or device has no usable
+            motion sensor. Open the app on a real
+            phone to use Spirit Level.
           </Text>
 
           <TouchableOpacity

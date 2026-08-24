@@ -1,5 +1,6 @@
+import * as Device from 'expo-device';
 import * as Location from 'expo-location';
-import { Magnetometer } from 'expo-sensors';
+import { DeviceMotion, Magnetometer } from 'expo-sensors';
 import React, {
   useCallback,
   useEffect,
@@ -9,6 +10,8 @@ import React, {
 
 import {
   ActivityIndicator,
+  Linking,
+  Platform,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -24,6 +27,7 @@ type CompassState =
   | 'checking'
   | 'ready'
   | 'unavailable'
+  | 'permission-denied'
   | 'error';
 
 type NorthType =
@@ -31,6 +35,7 @@ type NorthType =
   | 'Magnetic North';
 
 const SMOOTHING = 0.22;
+const SENSOR_WAIT_MS = 3000;
 
 export default function CompassScreen() {
   const [compassState, setCompassState] =
@@ -45,82 +50,73 @@ export default function CompassScreen() {
   const [northType, setNorthType] =
     useState<NorthType>('Magnetic North');
 
-  const subscriptionRef =
-    useRef<Location.LocationSubscription | null>(
-      null
-    );
+  const [isDemoMode, setIsDemoMode] =
+    useState(false);
+
+  const [statusMessage, setStatusMessage] =
+    useState('Starting compass...');
+
+  const locationSubscriptionRef =
+    useRef<Location.LocationSubscription | null>(null);
+
+  const magnetometerSubscriptionRef =
+    useRef<{ remove: () => void } | null>(null);
+
+  const deviceMotionSubscriptionRef =
+    useRef<{ remove: () => void } | null>(null);
+
+  const demoIntervalRef =
+    useRef<ReturnType<typeof setInterval> | null>(null);
 
   const previousHeadingRef =
     useRef<number | null>(null);
 
-  const normalizeHeading = (
-    value: number
-  ) => {
+  const hasLiveHeadingRef = useRef(false);
+
+  const normalizeHeading = (value: number): number => {
     return ((value % 360) + 360) % 360;
   };
 
-  /**
-   * Smooth heading while correctly handling
-   * the 359° -> 0° boundary.
-   */
-  const smoothHeading = (
-    newHeading: number
-  ) => {
-    const normalized =
-      normalizeHeading(newHeading);
-
-    if (
-      previousHeadingRef.current === null
-    ) {
-      previousHeadingRef.current =
-        normalized;
-
+  const smoothHeading = useCallback((newHeading: number): number => {
+    const normalized = normalizeHeading(newHeading);
+    if (previousHeadingRef.current === null) {
+      previousHeadingRef.current = normalized;
       return normalized;
     }
-
-    const previous =
-      previousHeadingRef.current;
-
-    /**
-     * Find shortest rotation direction.
-     *
-     * Example:
-     * previous = 359
-     * new = 1
-     *
-     * delta should be +2,
-     * not -358.
-     */
-    const delta =
-      ((normalized -
-        previous +
-        540) %
-        360) -
-      180;
-
-    const smoothed =
-      normalizeHeading(
-        previous +
-          delta * SMOOTHING
-      );
-
-    previousHeadingRef.current =
-      smoothed;
-
+    const previous = previousHeadingRef.current;
+    const delta = ((normalized - previous + 540) % 360) - 180;
+    const smoothed = normalizeHeading(previous + delta * SMOOTHING);
+    previousHeadingRef.current = smoothed;
     return smoothed;
-  };
+  }, []);
 
-  /**
-   * Convert degrees to human readable
-   * compass direction.
-   */
-  const getDirection = (
-    value: number | null
-  ) => {
+  const applyHeading = useCallback(
+    ({
+      value,
+      north,
+      nextAccuracy,
+    }: {
+      value: number;
+      north: NorthType;
+      nextAccuracy: number;
+    }) => {
+      if (typeof value !== 'number' || Number.isNaN(value)) {
+        return;
+      }
+      hasLiveHeadingRef.current = true;
+      setIsDemoMode(false);
+      setNorthType(north);
+      setAccuracy(nextAccuracy);
+      setHeading(smoothHeading(normalizeHeading(value)));
+      setCompassState('ready');
+    },
+    [smoothHeading]
+  );
+
+  const getDirection = (value: number | null): string => {
     if (value === null) {
       return '--';
     }
-
     const directions = [
       'North',
       'North-East',
@@ -131,150 +127,256 @@ export default function CompassScreen() {
       'West',
       'North-West',
     ];
-
-    const index =
-      Math.round(value / 45) % 8;
-
-    return directions[index];
+    return directions[Math.round(value / 45) % 8];
   };
 
-  const getShortDirection = (
-    value: number | null
-  ) => {
+  const getShortDirection = (value: number | null): string => {
     if (value === null) {
       return '--';
     }
-
-    const directions = [
-      'N',
-      'NE',
-      'E',
-      'SE',
-      'S',
-      'SW',
-      'W',
-      'NW',
-    ];
-
-    const index =
-      Math.round(value / 45) % 8;
-
-    return directions[index];
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return directions[Math.round(value / 45) % 8];
   };
 
-  const getAccuracyText = (
-    value: number
-  ) => {
+  const getAccuracyText = (value: number): string => {
     switch (value) {
       case 3:
         return 'High';
-
       case 2:
         return 'Medium';
-
       case 1:
         return 'Low';
-
       default:
         return 'Needs Calibration';
     }
   };
 
-  const startCompass =
-    useCallback(async () => {
-      try {
-        setCompassState('checking');
+  const stopSubscriptions = useCallback(() => {
+    locationSubscriptionRef.current?.remove();
+    locationSubscriptionRef.current = null;
+    magnetometerSubscriptionRef.current?.remove();
+    magnetometerSubscriptionRef.current = null;
+    deviceMotionSubscriptionRef.current?.remove();
+    deviceMotionSubscriptionRef.current = null;
+    if (demoIntervalRef.current) {
+      clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+    }
+  }, []);
 
-        /**
-         * First check whether this physical
-         * device actually has a magnetometer.
-         */
-        const magnetometerAvailable =
-          await Magnetometer.isAvailableAsync();
+  const startDemoCompass = useCallback(() => {
+    setIsDemoMode(true);
+    setNorthType('Magnetic North');
+    setAccuracy(2);
+    setHeading(0);
+    setCompassState('ready');
+    let angle = 0;
+    demoIntervalRef.current = setInterval(() => {
+      angle = (angle + 3) % 360;
+      setHeading(angle);
+    }, 120);
+  }, []);
 
-        if (!magnetometerAvailable) {
-          setCompassState(
-            'unavailable'
-          );
+  const waitForMs = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
+  /**
+   * Primary Android path: raw magnetometer.
+   * Do not hard-fail on isAvailableAsync / permission quirks.
+   */
+  const startMagnetometerCompass = useCallback(async (): Promise<boolean> => {
+    try {
+      setStatusMessage('Reading magnetometer...');
+      const available = await Magnetometer.isAvailableAsync().catch(() => true);
+      if (!available && Platform.OS === 'ios') {
+        return false;
+      }
+      if (Platform.OS === 'ios') {
+        try {
+          let permission = await Magnetometer.getPermissionsAsync();
+          if (!permission.granted) {
+            permission = await Magnetometer.requestPermissionsAsync();
+          }
+          if (!permission.granted) {
+            return false;
+          }
+        } catch {
+          // Continue without blocking.
+        }
+      }
+      Magnetometer.setUpdateInterval(100);
+      magnetometerSubscriptionRef.current = Magnetometer.addListener(
+        ({ x, y }) => {
+          const rawHeading =
+            (Math.atan2(-x, y) * 180) / Math.PI;
+          applyHeading({
+            value: rawHeading,
+            north: 'Magnetic North',
+            nextAccuracy: 2,
+          });
+        }
+      );
+      await waitForMs(SENSOR_WAIT_MS);
+      return hasLiveHeadingRef.current;
+    } catch (error) {
+      console.log('Magnetometer compass error:', error);
+      return false;
+    }
+  }, [applyHeading]);
+
+  /**
+   * Fallback using DeviceMotion rotation alpha.
+   */
+  const startDeviceMotionCompass = useCallback(async (): Promise<boolean> => {
+    try {
+      setStatusMessage('Reading device motion...');
+      const available = await DeviceMotion.isAvailableAsync().catch(() => false);
+      if (!available) {
+        return false;
+      }
+      if (Platform.OS === 'ios') {
+        try {
+          let permission = await DeviceMotion.getPermissionsAsync();
+          if (!permission.granted) {
+            permission = await DeviceMotion.requestPermissionsAsync();
+          }
+          if (!permission.granted) {
+            return false;
+          }
+        } catch {
+          // Continue without blocking.
+        }
+      }
+      DeviceMotion.setUpdateInterval(100);
+      deviceMotionSubscriptionRef.current = DeviceMotion.addListener((data) => {
+        if (!data.rotation) {
           return;
         }
+        const alphaDegrees = (data.rotation.alpha * 180) / Math.PI;
+        const rawHeading = 360 - alphaDegrees;
+        applyHeading({
+          value: rawHeading,
+          north: 'Magnetic North',
+          nextAccuracy: 1,
+        });
+      });
+      await waitForMs(SENSOR_WAIT_MS);
+      return hasLiveHeadingRef.current;
+    } catch (error) {
+      console.log('DeviceMotion compass error:', error);
+      return false;
+    }
+  }, [applyHeading]);
 
-        /**
-         * We do NOT force location permission
-         * here.
-         *
-         * Magnetic North works without it.
-         * If location permission already exists,
-         * Expo may provide True North as well.
-         */
-        const locationPermission =
-          await Location.getForegroundPermissionsAsync();
-
-        subscriptionRef.current?.remove();
-
-        subscriptionRef.current =
-          await Location.watchHeadingAsync(
-            (result) => {
-              /**
-               * trueHeading returns -1 when
-               * it isn't available.
-               */
-              const hasTrueHeading =
-                locationPermission.granted &&
-                result.trueHeading >= 0;
-
-              const rawHeading =
-                hasTrueHeading
-                  ? result.trueHeading
-                  : result.magHeading;
-
-              setNorthType(
-                hasTrueHeading
-                  ? 'True North'
-                  : 'Magnetic North'
-              );
-
-              setAccuracy(
-                result.accuracy
-              );
-
-              const smoothed =
-                smoothHeading(
-                  rawHeading
-                );
-
-              setHeading(smoothed);
-              setCompassState('ready');
-            },
-            (error) => {
-              console.log(
-                'Compass error:',
-                error
-              );
-
-              setCompassState(
-                'error'
-              );
-            }
-          );
-      } catch (error) {
-        console.log(
-          'Compass initialization error:',
-          error
-        );
-
-        setCompassState('error');
+  /**
+   * Location heading (best when GPS / true north is available).
+   */
+  const startLocationHeading = useCallback(async (): Promise<
+    'ready' | 'denied' | 'failed'
+  > => {
+    try {
+      setStatusMessage('Checking location permission...');
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        setStatusMessage('Turn on Location / GPS, then try again.');
+        return 'failed';
       }
-    }, []);
+      let permission = await Location.getForegroundPermissionsAsync();
+      if (!permission.granted) {
+        permission = await Location.requestForegroundPermissionsAsync();
+      }
+      if (!permission.granted) {
+        setStatusMessage('Location permission is required for compass heading.');
+        return 'denied';
+      }
+      setStatusMessage('Listening for compass heading...');
+      locationSubscriptionRef.current = await Location.watchHeadingAsync(
+        (result) => {
+          const hasTrueHeading =
+            permission.granted && result.trueHeading >= 0;
+          const rawHeading = hasTrueHeading
+            ? result.trueHeading
+            : result.magHeading;
+          if (
+            typeof rawHeading !== 'number' ||
+            Number.isNaN(rawHeading) ||
+            rawHeading < 0
+          ) {
+            return;
+          }
+          applyHeading({
+            value: rawHeading,
+            north: hasTrueHeading ? 'True North' : 'Magnetic North',
+            nextAccuracy: result.accuracy ?? 2,
+          });
+        }
+      );
+      await waitForMs(SENSOR_WAIT_MS);
+      return hasLiveHeadingRef.current ? 'ready' : 'failed';
+    } catch (error) {
+      console.log('Location heading unavailable:', error);
+      return 'failed';
+    }
+  }, [applyHeading]);
+
+  const startCompass = useCallback(async () => {
+    try {
+      setCompassState('checking');
+      setIsDemoMode(false);
+      hasLiveHeadingRef.current = false;
+      previousHeadingRef.current = null;
+      stopSubscriptions();
+
+      /**
+       * Try multiple sources. Android often fails Location heading
+       * or reports Magnetometer unavailable incorrectly, so we keep going.
+       */
+      if (await startMagnetometerCompass()) {
+        return;
+      }
+      if (await startDeviceMotionCompass()) {
+        return;
+      }
+      const locationResult = await startLocationHeading();
+      if (locationResult === 'ready') {
+        return;
+      }
+      if (locationResult === 'denied') {
+        setCompassState('permission-denied');
+        return;
+      }
+
+      if (!Device.isDevice) {
+        startDemoCompass();
+        return;
+      }
+
+      setStatusMessage(
+        'No compass sensor data received. Keep the phone away from metal, enable Location, and try again.'
+      );
+      setCompassState('unavailable');
+    } catch (error) {
+      console.log('Compass initialization error:', error);
+      if (!Device.isDevice) {
+        startDemoCompass();
+        return;
+      }
+      setCompassState('error');
+    }
+  }, [
+    startDemoCompass,
+    startDeviceMotionCompass,
+    startLocationHeading,
+    startMagnetometerCompass,
+    stopSubscriptions,
+  ]);
 
   useEffect(() => {
-    startCompass();
-
+    void startCompass();
     return () => {
-      subscriptionRef.current?.remove();
+      stopSubscriptions();
     };
-  }, [startCompass]);
+  }, [startCompass, stopSubscriptions]);
 
   const direction =
     getDirection(heading);
@@ -309,8 +411,42 @@ export default function CompassScreen() {
           <Text
             style={styles.loadingText}
           >
-            Starting compass...
+            {statusMessage}
           </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (compassState === 'permission-denied') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" />
+        <ScreenHeader title="Compass" />
+        <View style={styles.errorCard}>
+          <Text style={styles.errorTitle}>
+            Location Permission Required
+          </Text>
+          <Text style={styles.errorText}>
+            Compass needs location access on Android.
+            Allow location permission, then try again.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={startCompass}
+          >
+            <Text style={styles.retryButtonText}>
+              Try Again
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.retryButton, styles.settingsButton]}
+            onPress={() => Linking.openSettings()}
+          >
+            <Text style={styles.retryButtonText}>
+              Open Settings
+            </Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -343,8 +479,7 @@ export default function CompassScreen() {
           <Text
             style={styles.errorText}
           >
-            This device cannot provide
-            compass heading information.
+            {statusMessage}
           </Text>
 
           <TouchableOpacity
@@ -357,6 +492,14 @@ export default function CompassScreen() {
               }
             >
               Try Again
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.retryButton, styles.settingsButton]}
+            onPress={() => Linking.openSettings()}
+          >
+            <Text style={styles.retryButtonText}>
+              Open Settings
             </Text>
           </TouchableOpacity>
         </View>
@@ -381,6 +524,19 @@ export default function CompassScreen() {
         }
       >
         <ScreenHeader title="Compass" />
+
+        {isDemoMode && (
+          <View style={styles.demoBanner}>
+            <Text style={styles.demoBannerTitle}>
+              Demo mode
+            </Text>
+            <Text style={styles.demoBannerText}>
+              Emulator has no real compass sensor.
+              Heading is simulated for UI testing.
+              Use a physical phone for live compass.
+            </Text>
+          </View>
+        )}
 
         {/* Heading */}
 
@@ -794,6 +950,29 @@ const styles =
       color: '#6B7280',
     },
 
+    demoBanner: {
+      marginHorizontal: 22,
+      marginTop: 12,
+      padding: 14,
+      borderRadius: 16,
+      backgroundColor: '#FFFBEB',
+      borderWidth: 1,
+      borderColor: '#FDE68A',
+    },
+
+    demoBannerTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#92400E',
+    },
+
+    demoBannerText: {
+      marginTop: 4,
+      fontSize: 12,
+      lineHeight: 18,
+      color: '#B45309',
+    },
+
     headingContainer: {
       paddingTop: 16,
       paddingHorizontal: 24,
@@ -1182,6 +1361,11 @@ const styles =
       alignItems: 'center',
       justifyContent:
         'center',
+    },
+
+    settingsButton: {
+      marginTop: 10,
+      backgroundColor: '#1D4ED8',
     },
 
     retryButtonText: {
