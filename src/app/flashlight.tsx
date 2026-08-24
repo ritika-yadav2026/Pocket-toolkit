@@ -5,6 +5,7 @@ import {
 
 import React, {
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
@@ -40,6 +41,12 @@ export default function FlashlightScreen() {
   const [torchEnabled, setTorchEnabled] =
     useState(false);
 
+  const [isBlinking, setIsBlinking] =
+    useState(false);
+
+  const blinkIntervalRef =
+    useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [cameraError, setCameraError] =
     useState<string | null>(null);
 
@@ -74,25 +81,71 @@ export default function FlashlightScreen() {
     checkCamera();
   }, []);
 
-  /**
-   * Always turn torch state off
-   * when leaving the screen.
-   */
-  useEffect(() => {
-    return () => {
-      setTorchEnabled(false);
-    };
-  }, []);
+  const stopBlinking = () => {
+    if (blinkIntervalRef.current) {
+      clearInterval(blinkIntervalRef.current);
+      blinkIntervalRef.current = null;
+    }
 
-  const toggleFlashlight = () => {
+    setIsBlinking(false);
+    setTorchEnabled(false);
+  };
+
+  const startBlinking = () => {
     if (!cameraReady) {
       return;
     }
 
-    setTorchEnabled(
-      (current) => !current
+    if (blinkIntervalRef.current) {
+      clearInterval(blinkIntervalRef.current);
+    }
+
+    setTorchEnabled(true);
+    setIsBlinking(true);
+
+    blinkIntervalRef.current = setInterval(
+      () => {
+        setTorchEnabled(
+          (current) => !current
+        );
+      },
+      500
     );
   };
+
+  const toggleBlinking = () => {
+    if (isBlinking) {
+      stopBlinking();
+      return;
+    }
+
+    startBlinking();
+  };
+
+  /**
+   * Always stop blinking and turn the
+   * torch state off when leaving the screen.
+   */
+  useEffect(() => {
+    return () => {
+      if (blinkIntervalRef.current) {
+        clearInterval(blinkIntervalRef.current);
+      }
+
+      setTorchEnabled(false);
+    };
+  }, []);
+
+  // Normal Turn On / Turn Off — kept for later, blink-only for now.
+  // const toggleFlashlight = () => {
+  //   if (!cameraReady || isBlinking) {
+  //     return;
+  //   }
+  //
+  //   setTorchEnabled(
+  //     (current) => !current
+  //   );
+  // };
 
   const handleCameraReady = () => {
     setCameraReady(true);
@@ -108,7 +161,7 @@ export default function FlashlightScreen() {
     );
 
     setCameraReady(false);
-    setTorchEnabled(false);
+    stopBlinking();
     setCameraError(event.message);
   };
 
@@ -326,9 +379,9 @@ export default function FlashlightScreen() {
                 styles.lightSubtitle,
             ]}
           >
-            {torchEnabled
-              ? 'Your flashlight is on'
-              : 'Tap the button to turn on the flashlight'}
+            {isBlinking || torchEnabled
+              ? 'Your flashlight is blinking'
+              : 'Tap Blink Flashlight to start'}
           </Text>
 
           {/* Main flashlight visual */}
@@ -408,11 +461,81 @@ export default function FlashlightScreen() {
             </Text>
           </View>
 
-          {/* Power Button */}
+          {/* Torch intensity */}
 
+          <View
+            style={styles.intensitySection}
+          >
+            <View
+              style={
+                styles.intensityHeader
+              }
+            >
+              <Text
+                style={[
+                  styles.intensityTitle,
+                  torchEnabled &&
+                    styles.lightText,
+                ]}
+              >
+                Intensity
+              </Text>
+
+              <Text
+                style={
+                  styles.intensityValue
+                }
+              >
+                Device default
+              </Text>
+            </View>
+
+            <View
+              style={
+                styles.intensityOptions
+              }
+            >
+              {[
+                'Low',
+                'Medium',
+                'High',
+              ].map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  disabled
+                  style={
+                    styles.intensityOption
+                  }
+                >
+                  <Text
+                    style={
+                      styles.intensityOptionText
+                    }
+                  >
+                    {level}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text
+              style={
+                styles.intensityUnsupported
+              }
+            >
+              Torch intensity is not
+              supported by Expo Camera on
+              this device build.
+            </Text>
+          </View>
+
+          {/* Power Button — Turn On / Turn Off (disabled while blink-only) */}
+          {/*
           <TouchableOpacity
             activeOpacity={0.8}
-            disabled={!cameraReady}
+            disabled={
+              !cameraReady || isBlinking
+            }
             onPress={
               toggleFlashlight
             }
@@ -421,7 +544,8 @@ export default function FlashlightScreen() {
               torchEnabled
                 ? styles.powerButtonActive
                 : styles.powerButtonInactive,
-              !cameraReady &&
+              (!cameraReady ||
+                isBlinking) &&
                 styles.powerButtonDisabled,
             ]}
           >
@@ -450,6 +574,31 @@ export default function FlashlightScreen() {
                 </Text>
               </>
             )}
+          </TouchableOpacity>
+          */}
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={!cameraReady}
+            onPress={toggleBlinking}
+            style={[
+              styles.powerButton,
+              styles.blinkButton,
+              isBlinking &&
+                styles.blinkButtonActive,
+              !cameraReady &&
+                styles.powerButtonDisabled,
+            ]}
+          >
+            <Text
+              style={
+                styles.powerButtonText
+              }
+            >
+              {isBlinking
+                ? 'Stop Blinking'
+                : 'Blink Flashlight'}
+            </Text>
           </TouchableOpacity>
 
           {/* Camera error */}
@@ -682,6 +831,57 @@ const styles = StyleSheet.create({
     color: '#22C55E',
   },
 
+  intensitySection: {
+    width: '100%',
+    marginTop: 18,
+  },
+
+  intensityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  intensityTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+
+  intensityValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+
+  intensityOptions: {
+    flexDirection: 'row',
+    marginTop: 10,
+    gap: 8,
+  },
+
+  intensityOption: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    opacity: 0.55,
+  },
+
+  intensityOptionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+
+  intensityUnsupported: {
+    marginTop: 8,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#94A3B8',
+  },
+
   powerButton: {
     width: '100%',
     height: 60,
@@ -697,6 +897,15 @@ const styles = StyleSheet.create({
   },
 
   powerButtonActive: {
+    backgroundColor: '#DC2626',
+  },
+
+  blinkButton: {
+    marginTop: 12,
+    backgroundColor: '#7C3AED',
+  },
+
+  blinkButtonActive: {
     backgroundColor: '#DC2626',
   },
 

@@ -1,10 +1,10 @@
 import { router, type Href } from 'expo-router';
 import {
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 
@@ -100,9 +100,10 @@ export default function HomeScreen() {
 
       <View style={styles.grid}>
         {tools.map((tool) => (
-          <Pressable
+          <TouchableOpacity
             key={tool.id}
             style={styles.card}
+            activeOpacity={0.7}
             onPress={() => handleToolPress(tool.id, tool.title)}
           >
             <Text style={styles.icon}>{tool.icon}</Text>
@@ -114,7 +115,7 @@ export default function HomeScreen() {
             <Text style={styles.cardDescription}>
               {tool.description}
             </Text>
-          </Pressable>
+          </TouchableOpacity>
         ))}
       </View>
     </ScrollView>
