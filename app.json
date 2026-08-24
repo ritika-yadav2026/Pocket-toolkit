@@ -8,10 +8,12 @@
     "icon": "./assets/images/icon.png",
     "scheme": "pockettoolkit",
     "userInterfaceStyle": "automatic",
+
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.ritikayadav.pockettoolkit"
     },
+
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -26,12 +28,15 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
+
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
+
       [
         "expo-splash-screen",
         {
@@ -40,17 +45,53 @@
           "imageWidth": 76
         }
       ],
+
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Pocket Toolkit to use the camera for the flashlight."
+          "cameraPermission": "Allow Pocket Toolkit to access your camera for QR scanning and flashlight features."
+        }
+      ],
+
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Pocket Toolkit to access your microphone for sound measurement.",
+          "recordAudioAndroid": true
+        }
+      ],
+
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow Pocket Toolkit to access motion data for step counting."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Pocket Toolkit to access your location for GPS tools."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Pocket Toolkit to access your photos to scan QR codes."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Pocket Toolkit to access your camera for QR scanning and flashlight features."
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "router": {},
       "eas": {

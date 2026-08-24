@@ -1,162 +1,866 @@
-import { router } from 'expo-router';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useState } from 'react';
+import {
+  CameraView,
+  useCameraPermissions,
+} from 'expo-camera';
+
+import React, {
+  useEffect,
+  useState,
+} from 'react';
 
 import {
-  Pressable,
+  ActivityIndicator,
+  Linking,
+  SafeAreaView,
+  StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 
-export default function FlashlightScreen() {
-  const [isTorchOn, setIsTorchOn] = useState(false);
-  const [permission, requestPermission] = useCameraPermissions();
+import { ScreenHeader } from '@/components/screen-header';
 
-  if (!permission) {
+type CameraState =
+  | 'checking'
+  | 'ready'
+  | 'unavailable'
+  | 'error';
+
+export default function FlashlightScreen() {
+  const [permission, requestPermission] =
+    useCameraPermissions();
+
+  const [cameraState, setCameraState] =
+    useState<CameraState>('checking');
+
+  const [cameraReady, setCameraReady] =
+    useState(false);
+
+  const [torchEnabled, setTorchEnabled] =
+    useState(false);
+
+  const [cameraError, setCameraError] =
+    useState<string | null>(null);
+
+  /**
+   * Check whether a camera exists
+   * on the current device.
+   */
+  useEffect(() => {
+    const checkCamera = async () => {
+      try {
+        setCameraState('checking');
+
+        const available =
+          await CameraView.isAvailableAsync();
+
+        if (!available) {
+          setCameraState('unavailable');
+          return;
+        }
+
+        setCameraState('ready');
+      } catch (error) {
+        console.log(
+          'Camera availability error:',
+          error
+        );
+
+        setCameraState('error');
+      }
+    };
+
+    checkCamera();
+  }, []);
+
+  /**
+   * Always turn torch state off
+   * when leaving the screen.
+   */
+  useEffect(() => {
+    return () => {
+      setTorchEnabled(false);
+    };
+  }, []);
+
+  const toggleFlashlight = () => {
+    if (!cameraReady) {
+      return;
+    }
+
+    setTorchEnabled(
+      (current) => !current
+    );
+  };
+
+  const handleCameraReady = () => {
+    setCameraReady(true);
+    setCameraError(null);
+  };
+
+  const handleCameraError = (
+    event: { message: string }
+  ) => {
+    console.log(
+      'Camera mount error:',
+      event.message
+    );
+
+    setCameraReady(false);
+    setTorchEnabled(false);
+    setCameraError(event.message);
+  };
+
+  /**
+   * Camera permission still loading.
+   */
+  if (
+    !permission ||
+    cameraState === 'checking'
+  ) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.text}>Loading...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <StatusBar
+          barStyle="dark-content"
+        />
+
+        <ScreenHeader title="Flashlight" />
+
+        <View style={styles.centerState}>
+          <ActivityIndicator
+            size="large"
+            color="#2563EB"
+          />
+
+          <Text style={styles.loadingText}>
+            Preparing flashlight...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
+  /**
+   * Device has no usable camera.
+   */
+  if (
+    cameraState === 'unavailable'
+  ) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar
+          barStyle="dark-content"
+        />
+
+        <ScreenHeader title="Flashlight" />
+
+        <View style={styles.errorCard}>
+          <Text style={styles.errorTitle}>
+            Camera Unavailable
+          </Text>
+
+          <Text style={styles.errorText}>
+            This device does not have an
+            available camera for the
+            flashlight.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  /**
+   * Camera permission not granted.
+   */
   if (!permission.granted) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>🔦 Flashlight</Text>
+      <SafeAreaView style={styles.container}>
+        <StatusBar
+          barStyle="dark-content"
+        />
 
-        <Text style={styles.text}>
-          Camera permission is required to use flashlight.
-        </Text>
+        <ScreenHeader title="Flashlight" />
 
-        <Pressable style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Allow Camera</Text>
-        </Pressable>
+        <View
+          style={
+            styles.permissionContainer
+          }
+        >
+          <View
+            style={styles.permissionIcon}
+          >
+            <Text
+              style={
+                styles.permissionIconText
+              }
+            >
+              🔦
+            </Text>
+          </View>
 
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.buttonText}>Back</Text>
-        </Pressable>
-      </View>
+          <Text
+            style={
+              styles.permissionTitle
+            }
+          >
+            Camera Access Required
+          </Text>
+
+          <Text
+            style={
+              styles.permissionText
+            }
+          >
+            Pocket Toolkit uses the rear
+            camera torch to provide the
+            flashlight feature.
+          </Text>
+
+          {permission.canAskAgain ? (
+            <TouchableOpacity
+              style={
+                styles.permissionButton
+              }
+              activeOpacity={0.8}
+              onPress={
+                requestPermission
+              }
+            >
+              <Text
+                style={
+                  styles.permissionButtonText
+                }
+              >
+                Allow Camera Access
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={
+                styles.permissionButton
+              }
+              activeOpacity={0.8}
+              onPress={() =>
+                Linking.openSettings()
+              }
+            >
+              <Text
+                style={
+                  styles.permissionButtonText
+                }
+              >
+                Open Settings
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing="back"
-        enableTorch={isTorchOn}
+    <SafeAreaView style={styles.container}>
+      <StatusBar
+        barStyle={
+          torchEnabled
+            ? 'light-content'
+            : 'dark-content'
+        }
       />
 
-      <View style={styles.overlay}>
-        <Text style={styles.title}>🔦 Flashlight</Text>
+      {/*
+       * CameraView must remain mounted
+       * so the hardware torch can work.
+       *
+       * We don't need to show the camera
+       * preview to the user, therefore we
+       * keep the preview extremely small.
+       */}
+      <CameraView
+        style={styles.hiddenCamera}
+        facing="back"
+        enableTorch={
+          cameraReady &&
+          torchEnabled
+        }
+        onCameraReady={
+          handleCameraReady
+        }
+        onMountError={
+          handleCameraError
+        }
+      />
 
-        <Text style={styles.status}>
-          {isTorchOn ? 'Flashlight is ON' : 'Flashlight is OFF'}
-        </Text>
+      <View
+        style={[
+          styles.screen,
+          torchEnabled &&
+            styles.screenActive,
+        ]}
+      >
+        <ScreenHeader
+          title="Flashlight"
+          variant={torchEnabled ? 'dark' : 'default'}
+        />
 
-        <Pressable
-          style={[
-            styles.torchButton,
-            isTorchOn && styles.torchButtonOn,
-          ]}
-          onPress={() => setIsTorchOn(prev => !prev)}
+        <View
+          style={styles.content}
         >
-          <Text style={styles.torchIcon}>
-            {isTorchOn ? '💡' : '🔦'}
+          {/* Heading */}
+
+          <Text
+            style={[
+              styles.title,
+              torchEnabled &&
+                styles.lightText,
+            ]}
+          >
+            Flashlight
           </Text>
 
-          <Text style={styles.torchButtonText}>
-            {isTorchOn ? 'Turn Off' : 'Turn On'}
+          <Text
+            style={[
+              styles.subtitle,
+              torchEnabled &&
+                styles.lightSubtitle,
+            ]}
+          >
+            {torchEnabled
+              ? 'Your flashlight is on'
+              : 'Tap the button to turn on the flashlight'}
           </Text>
-        </Pressable>
 
-        <Pressable
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.buttonText}>Back</Text>
-        </Pressable>
+          {/* Main flashlight visual */}
+
+          <View
+            style={[
+              styles.lightArea,
+              torchEnabled &&
+                styles.lightAreaActive,
+            ]}
+          >
+            <View
+              style={[
+                styles.glowOuter,
+                torchEnabled &&
+                  styles.glowOuterActive,
+              ]}
+            >
+              <View
+                style={[
+                  styles.glowMiddle,
+                  torchEnabled &&
+                    styles.glowMiddleActive,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.flashlightCircle,
+                    torchEnabled &&
+                      styles.flashlightCircleActive,
+                  ]}
+                >
+                  <Text
+                    style={
+                      styles.flashlightIcon
+                    }
+                  >
+                    🔦
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Status */}
+
+          <View
+            style={[
+              styles.statusBadge,
+              torchEnabled
+                ? styles.statusOn
+                : styles.statusOff,
+            ]}
+          >
+            <View
+              style={[
+                styles.statusDot,
+                torchEnabled
+                  ? styles.statusDotOn
+                  : styles.statusDotOff,
+              ]}
+            />
+
+            <Text
+              style={[
+                styles.statusText,
+                torchEnabled
+                  ? styles.statusTextOn
+                  : styles.statusTextOff,
+              ]}
+            >
+              {torchEnabled
+                ? 'FLASHLIGHT ON'
+                : cameraReady
+                  ? 'FLASHLIGHT OFF'
+                  : 'PREPARING CAMERA'}
+            </Text>
+          </View>
+
+          {/* Power Button */}
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={!cameraReady}
+            onPress={
+              toggleFlashlight
+            }
+            style={[
+              styles.powerButton,
+              torchEnabled
+                ? styles.powerButtonActive
+                : styles.powerButtonInactive,
+              !cameraReady &&
+                styles.powerButtonDisabled,
+            ]}
+          >
+            {!cameraReady ? (
+              <ActivityIndicator
+                color="#FFFFFF"
+              />
+            ) : (
+              <>
+                <Text
+                  style={
+                    styles.powerIcon
+                  }
+                >
+                  ⏻
+                </Text>
+
+                <Text
+                  style={
+                    styles.powerButtonText
+                  }
+                >
+                  {torchEnabled
+                    ? 'Turn Off'
+                    : 'Turn On'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Camera error */}
+
+          {cameraError && (
+            <View
+              style={
+                styles.cameraErrorCard
+              }
+            >
+              <Text
+                style={
+                  styles.cameraErrorTitle
+                }
+              >
+                Camera Error
+              </Text>
+
+              <Text
+                style={
+                  styles.cameraErrorText
+                }
+              >
+                {cameraError}
+              </Text>
+            </View>
+          )}
+
+          {/* Information */}
+
+          <View
+            style={[
+              styles.infoCard,
+              torchEnabled &&
+                styles.infoCardDark,
+            ]}
+          >
+            <View
+              style={styles.infoIcon}
+            >
+              <Text
+                style={
+                  styles.infoIconText
+                }
+              >
+                i
+              </Text>
+            </View>
+
+            <Text
+              style={[
+                styles.infoText,
+                torchEnabled &&
+                  styles.infoTextDark,
+              ]}
+            >
+              The flashlight uses your
+              phone&apos;s rear camera torch.
+              It will automatically stop
+              when this screen is closed.
+            </Text>
+          </View>
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+
+  screen: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+
+  screenActive: {
     backgroundColor: '#0F172A',
   },
 
-  overlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: '#0F172A',
+  /*
+   * Camera session is required for torch,
+   * but we don't need the preview.
+   */
+  hiddenCamera: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0.01,
+  },
+
+  content: {
+    flex: 1,
+    paddingHorizontal: 22,
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
   },
 
   title: {
+    marginTop: 20,
     fontSize: 30,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#111827',
+  },
+
+  subtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    color: '#6B7280',
+  },
+
+  lightText: {
     color: '#FFFFFF',
   },
 
-  text: {
-    marginTop: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
+  lightSubtitle: {
+    color: '#CBD5E1',
   },
 
-  status: {
-    marginTop: 20,
-    fontSize: 16,
-    color: '#94A3B8',
-  },
-
-  torchButton: {
-    marginTop: 40,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: '#334155',
+  lightArea: {
+    width: '100%',
+    height: 330,
+    marginTop: 30,
+    borderRadius: 32,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  torchButtonOn: {
+  lightAreaActive: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
+
+  glowOuter: {
+    width: 235,
+    height: 235,
+    borderRadius: 118,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  glowOuterActive: {
+    backgroundColor:
+      'rgba(250,204,21,0.10)',
+  },
+
+  glowMiddle: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  glowMiddleActive: {
+    backgroundColor:
+      'rgba(250,204,21,0.20)',
+  },
+
+  flashlightCircle: {
+    width: 125,
+    height: 125,
+    borderRadius: 63,
+    backgroundColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  flashlightCircleActive: {
     backgroundColor: '#FACC15',
   },
 
-  torchIcon: {
+  flashlightIcon: {
+    fontSize: 52,
+  },
+
+  statusBadge: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  statusOff: {
+    backgroundColor: '#F1F5F9',
+  },
+
+  statusOn: {
+    backgroundColor:
+      'rgba(34,197,94,0.15)',
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+
+  statusDotOff: {
+    backgroundColor: '#94A3B8',
+  },
+
+  statusDotOn: {
+    backgroundColor: '#22C55E',
+  },
+
+  statusText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+
+  statusTextOff: {
+    color: '#64748B',
+  },
+
+  statusTextOn: {
+    color: '#22C55E',
+  },
+
+  powerButton: {
+    width: '100%',
+    height: 60,
+    marginTop: 26,
+    borderRadius: 19,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  powerButtonInactive: {
+    backgroundColor: '#2563EB',
+  },
+
+  powerButtonActive: {
+    backgroundColor: '#DC2626',
+  },
+
+  powerButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  powerIcon: {
+    fontSize: 22,
+    color: '#FFFFFF',
+    marginRight: 9,
+  },
+
+  powerButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  infoCard: {
+    width: '100%',
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: '#EFF6FF',
+    flexDirection: 'row',
+  },
+
+  infoCardDark: {
+    backgroundColor:
+      'rgba(255,255,255,0.08)',
+  },
+
+  infoIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  infoIconText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+
+  infoText: {
+    flex: 1,
+    marginLeft: 11,
+    fontSize: 11,
+    lineHeight: 18,
+    color: '#64748B',
+  },
+
+  infoTextDark: {
+    color: '#CBD5E1',
+  },
+
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  loadingText: {
+    marginTop: 14,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+
+  permissionContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+
+  permissionIcon: {
+    width: 90,
+    height: 90,
+    borderRadius: 30,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  permissionIconText: {
     fontSize: 42,
   },
 
-  torchButtonText: {
-    marginTop: 8,
-    color: '#FFFFFF',
+  permissionTitle: {
+    marginTop: 20,
+    fontSize: 21,
+    fontWeight: '800',
+    color: '#111827',
+  },
+
+  permissionText: {
+    marginTop: 9,
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+
+  permissionButton: {
+    marginTop: 24,
+    height: 54,
+    paddingHorizontal: 28,
+    borderRadius: 17,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  permissionButtonText: {
+    fontSize: 14,
     fontWeight: '700',
-  },
-
-  button: {
-    marginTop: 30,
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-
-  backButton: {
-    marginTop: 30,
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-
-  buttonText: {
     color: '#FFFFFF',
-    fontWeight: '600',
+  },
+
+  errorCard: {
+    marginHorizontal: 22,
+    marginTop: 50,
+    padding: 24,
+    borderRadius: 22,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#991B1B',
+  },
+
+  errorText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#B91C1C',
+  },
+
+  cameraErrorCard: {
+    width: '100%',
+    marginTop: 18,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#FEF2F2',
+  },
+
+  cameraErrorTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
+
+  cameraErrorText: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 17,
+    color: '#B91C1C',
   },
 });

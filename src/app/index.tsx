@@ -45,12 +45,29 @@ const tools = [
     icon: '👣',
     description: 'Track your movement',
   },
+  {
+    id: 'soundMeter',
+    title: 'Sound Meter',
+    icon: '🔊',
+    description: 'Measure noise levels',
+  },
+  {
+    id: 'deviceInfo',
+    title: 'Device Info',
+    icon: '📱',
+    description: 'See phone details',
+  },
 ];
 
 const toolRoutes: Record<string, Href> = {
   flashlight: '/flashlight',
   compass: '/compass',
-  level: '/level',
+  level: '/spirit-level',
+  scanner: '/qr-scanner',
+  location: '/location',
+  steps: '/step-counter',
+  soundMeter: '/sound-meter',
+  deviceInfo: '/device-info',
 };
 
 export default function HomeScreen() {
