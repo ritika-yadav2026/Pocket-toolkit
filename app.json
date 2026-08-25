@@ -10,7 +10,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.ritikayadav.pockettoolkit",
+      "bundleIdentifier": "com.pockettoolkitnew",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -23,7 +23,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ritikayadav.pockettoolkit",
+      "package": "com.pockettoolkitnew",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",

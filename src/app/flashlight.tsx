@@ -3,7 +3,7 @@ import {
   useCameraPermissions,
 } from 'expo-camera';
 
-import React, {
+import {
   useEffect,
   useRef,
   useState,
@@ -28,6 +28,28 @@ type CameraState =
   | 'unavailable'
   | 'error';
 
+type IntensityLevel = 'Low' | 'Medium' | 'High';
+
+const INTENSITY_LEVELS: readonly IntensityLevel[] = [
+  'Low',
+  'Medium',
+  'High',
+] as const;
+
+/**
+ * Expo Camera only supports torch on/off.
+ * Intensity is approximated by how long the
+ * torch stays on vs off during each blink.
+ */
+const INTENSITY_TIMINGS: Record<
+  IntensityLevel,
+  { readonly onMs: number; readonly offMs: number }
+> = {
+  Low: { onMs: 120, offMs: 480 },
+  Medium: { onMs: 250, offMs: 250 },
+  High: { onMs: 420, offMs: 80 },
+};
+
 export default function FlashlightScreen() {
   const [permission, requestPermission] =
     useCameraPermissions();
@@ -44,8 +66,14 @@ export default function FlashlightScreen() {
   const [isBlinking, setIsBlinking] =
     useState(false);
 
-  const blinkIntervalRef =
-    useRef<ReturnType<typeof setInterval> | null>(null);
+  const [intensity, setIntensity] =
+    useState<IntensityLevel>('Medium');
+
+  const blinkTimeoutRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const intensityRef = useRef<IntensityLevel>(intensity);
+  intensityRef.current = intensity;
 
   const [cameraError, setCameraError] =
     useState<string | null>(null);
@@ -81,12 +109,37 @@ export default function FlashlightScreen() {
     checkCamera();
   }, []);
 
-  const stopBlinking = () => {
-    if (blinkIntervalRef.current) {
-      clearInterval(blinkIntervalRef.current);
-      blinkIntervalRef.current = null;
+  const clearBlinkTimer = () => {
+    if (blinkTimeoutRef.current) {
+      clearTimeout(blinkTimeoutRef.current);
+      blinkTimeoutRef.current = null;
     }
+  };
 
+  const runBlinkStep = (shouldBeOn: boolean) => {
+    const level = intensityRef.current;
+    const timings = INTENSITY_TIMINGS[level];
+    const delayMs = shouldBeOn
+      ? timings.onMs
+      : timings.offMs;
+
+    console.log('[Flashlight intensity]', {
+      level,
+      torch: shouldBeOn ? 'ON' : 'OFF',
+      onMs: timings.onMs,
+      offMs: timings.offMs,
+      nextDelayMs: delayMs,
+    });
+
+    setTorchEnabled(shouldBeOn);
+
+    blinkTimeoutRef.current = setTimeout(() => {
+      runBlinkStep(!shouldBeOn);
+    }, delayMs);
+  };
+
+  const stopBlinking = () => {
+    clearBlinkTimer();
     setIsBlinking(false);
     setTorchEnabled(false);
   };
@@ -96,21 +149,18 @@ export default function FlashlightScreen() {
       return;
     }
 
-    if (blinkIntervalRef.current) {
-      clearInterval(blinkIntervalRef.current);
-    }
+    const timings =
+      INTENSITY_TIMINGS[intensityRef.current];
 
-    setTorchEnabled(true);
+    console.log('[Flashlight intensity] start blinking', {
+      level: intensityRef.current,
+      onMs: timings.onMs,
+      offMs: timings.offMs,
+    });
+
+    clearBlinkTimer();
     setIsBlinking(true);
-
-    blinkIntervalRef.current = setInterval(
-      () => {
-        setTorchEnabled(
-          (current) => !current
-        );
-      },
-      500
-    );
+    runBlinkStep(true);
   };
 
   const toggleBlinking = () => {
@@ -122,14 +172,38 @@ export default function FlashlightScreen() {
     startBlinking();
   };
 
+  const handleIntensityPress = (
+    level: IntensityLevel
+  ) => {
+    const timings = INTENSITY_TIMINGS[level];
+
+    console.log('[Flashlight intensity] selected', {
+      level,
+      onMs: timings.onMs,
+      offMs: timings.offMs,
+      isBlinking,
+    });
+
+    debugger;
+
+    setIntensity(level);
+
+    if (!isBlinking) {
+      return;
+    }
+
+    clearBlinkTimer();
+    runBlinkStep(true);
+  };
+
   /**
    * Always stop blinking and turn the
    * torch state off when leaving the screen.
    */
   useEffect(() => {
     return () => {
-      if (blinkIntervalRef.current) {
-        clearInterval(blinkIntervalRef.current);
+      if (blinkTimeoutRef.current) {
+        clearTimeout(blinkTimeoutRef.current);
       }
 
       setTorchEnabled(false);
@@ -461,7 +535,7 @@ export default function FlashlightScreen() {
             </Text>
           </View>
 
-          {/* Torch intensity */}
+          {/* Torch intensity (blink duty cycle) */}
 
           <View
             style={styles.intensitySection}
@@ -486,7 +560,7 @@ export default function FlashlightScreen() {
                   styles.intensityValue
                 }
               >
-                Device default
+                {intensity}
               </Text>
             </View>
 
@@ -495,27 +569,35 @@ export default function FlashlightScreen() {
                 styles.intensityOptions
               }
             >
-              {[
-                'Low',
-                'Medium',
-                'High',
-              ].map((level) => (
-                <TouchableOpacity
-                  key={level}
-                  disabled
-                  style={
-                    styles.intensityOption
-                  }
-                >
-                  <Text
-                    style={
-                      styles.intensityOptionText
+              {INTENSITY_LEVELS.map((level) => {
+                const isSelected =
+                  intensity === level;
+
+                return (
+                  <TouchableOpacity
+                    key={level}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      handleIntensityPress(level)
                     }
+                    style={[
+                      styles.intensityOption,
+                      isSelected &&
+                        styles.intensityOptionSelected,
+                    ]}
                   >
-                    {level}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.intensityOptionText,
+                        isSelected &&
+                          styles.intensityOptionTextSelected,
+                      ]}
+                    >
+                      {level}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <Text
@@ -523,9 +605,10 @@ export default function FlashlightScreen() {
                 styles.intensityUnsupported
               }
             >
-              Torch intensity is not
-              supported by Expo Camera on
-              this device build.
+              Expo Camera cannot change hardware
+              torch brightness. Intensity controls
+              how long the light stays on during
+              each blink (Low dimmer, High brighter).
             </Text>
           </View>
 
@@ -866,13 +949,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#E2E8F0',
     alignItems: 'center',
-    opacity: 0.55,
+  },
+
+  intensityOptionSelected: {
+    backgroundColor: '#2563EB',
   },
 
   intensityOptionText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
+  },
+
+  intensityOptionTextSelected: {
+    color: '#FFFFFF',
   },
 
   intensityUnsupported: {
