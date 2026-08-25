@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const tools = [
   {
@@ -81,8 +82,8 @@ export default function HomeScreen() {
   };
 
   return (
+    <SafeAreaView style={styles.container}>
     <ScrollView
-      style={styles.container}
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >
@@ -119,6 +120,7 @@ export default function HomeScreen() {
         ))}
       </View>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -130,7 +132,7 @@ const styles = StyleSheet.create({
 
   contentContainer: {
     paddingHorizontal: 20,
-    paddingTop: 70,
+    paddingTop: 28,
     paddingBottom: 40,
   },
 

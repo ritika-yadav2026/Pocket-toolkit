@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ScreenHeaderProps = {
   readonly title: string;
@@ -14,22 +13,18 @@ type ScreenHeaderProps = {
 };
 
 /**
- * Shared tool-screen header with safe-area top padding
- * and a larger back-button hit target.
+ * Shared tool-screen header. The parent screen owns safe-area spacing so the
+ * inset is applied exactly once on every route.
  */
 export function ScreenHeader({
   title,
   variant = 'default',
 }: ScreenHeaderProps): React.JSX.Element {
-  const insets = useSafeAreaInsets();
   const isDark = variant === 'dark';
 
   return (
     <View
-      style={[
-        styles.header,
-        { paddingTop: Math.max(insets.top, 12) + 8 },
-      ]}
+      style={styles.header}
     >
       <TouchableOpacity
         style={[styles.backButton, isDark && styles.backButtonDark]}
@@ -56,6 +51,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
+    paddingTop: 8,
     paddingBottom: 8,
   },
   backButton: {

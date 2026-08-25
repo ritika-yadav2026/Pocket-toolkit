@@ -12,13 +12,14 @@ import {
 import {
   ActivityIndicator,
   Linking,
-  SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/screen-header';
 
@@ -431,8 +432,9 @@ export default function FlashlightScreen() {
           variant={torchEnabled ? 'dark' : 'default'}
         />
 
-        <View
-          style={styles.content}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
         >
           {/* Heading */}
 
@@ -744,7 +746,7 @@ export default function FlashlightScreen() {
               when this screen is closed.
             </Text>
           </View>
-        </View>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
@@ -777,8 +779,9 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 22,
+    paddingBottom: 32,
     alignItems: 'center',
   },
 
@@ -807,7 +810,9 @@ const styles = StyleSheet.create({
 
   lightArea: {
     width: '100%',
-    height: 330,
+    minHeight: 280,
+    aspectRatio: 1.08,
+    maxHeight: 330,
     marginTop: 30,
     borderRadius: 32,
     backgroundColor: '#FFFFFF',
@@ -823,8 +828,8 @@ const styles = StyleSheet.create({
   },
 
   glowOuter: {
-    width: 235,
-    height: 235,
+    width: '72%',
+    aspectRatio: 1,
     borderRadius: 118,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
@@ -837,8 +842,8 @@ const styles = StyleSheet.create({
   },
 
   glowMiddle: {
-    width: 180,
-    height: 180,
+    width: '77%',
+    aspectRatio: 1,
     borderRadius: 90,
     backgroundColor: '#E2E8F0',
     alignItems: 'center',
@@ -851,8 +856,8 @@ const styles = StyleSheet.create({
   },
 
   flashlightCircle: {
-    width: 125,
-    height: 125,
+    width: '70%',
+    aspectRatio: 1,
     borderRadius: 63,
     backgroundColor: '#CBD5E1',
     alignItems: 'center',

@@ -100,7 +100,7 @@ export default function QRScannerScreen(): React.JSX.Element {
 
   if (!permission) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+      <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
         <ScreenHeader title="QR Scanner" />
         <View style={styles.centerState}>
@@ -113,7 +113,7 @@ export default function QRScannerScreen(): React.JSX.Element {
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+      <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
         <ScreenHeader title="QR Scanner" />
         <View style={styles.permissionCard}>
@@ -136,7 +136,7 @@ export default function QRScannerScreen(): React.JSX.Element {
   const isScanningPaused = scannedData !== null;
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <ScreenHeader title="QR Scanner" />
 
